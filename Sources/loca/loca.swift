@@ -2,7 +2,7 @@ import CoreLocation
 import Darwin
 import Foundation
 
-private let version = "0.1.1"
+private let version = "0.1.2"
 private let stderrIsTTY = isatty(fileno(stderr)) == 1
 
 private enum Command {
@@ -262,17 +262,24 @@ private final class CoreLocationFetcher: NSObject, CLLocationManagerDelegate {
     private func reverseGeocode(location: CLLocation, timeout: TimeInterval) -> (String, String, String) {
         let semaphore = DispatchSemaphore(value: 0)
         let box = PlacemarkBox()
-
         geocoder.reverseGeocodeLocation(location) { placemarks, _ in
             box.placemark = placemarks?.first
             semaphore.signal()
         }
 
-        _ = semaphore.wait(timeout: .now() + timeout)
-        let city = box.placemark?.locality ?? ""
-        let region = box.placemark?.administrativeArea ?? ""
-        let country = box.placemark?.country ?? ""
-        return (city, region, country)
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if semaphore.wait(timeout: .now()) == .success {
+                break
+            }
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+
+        return (
+            cityFromPlacemark(box.placemark),
+            regionFromPlacemark(box.placemark),
+            countryFromPlacemark(box.placemark)
+        )
     }
 
     private func finish(_ newResult: Result<LocationPayload, CLIError>) {
@@ -560,19 +567,25 @@ private func decodeProviderData(providerName: String, data: Data) -> Result<Prov
 private func enrichWithReverseGeocode(_ providerLocation: ProviderLocation) -> ProviderLocation {
     let location = CLLocation(latitude: providerLocation.latitude, longitude: providerLocation.longitude)
     let geocoder = CLGeocoder()
-    let semaphore = DispatchSemaphore(value: 0)
     let box = PlacemarkBox()
+    let semaphore = DispatchSemaphore(value: 0)
 
     geocoder.reverseGeocodeLocation(location) { placemarks, _ in
         box.placemark = placemarks?.first
         semaphore.signal()
     }
 
-    _ = semaphore.wait(timeout: .now() + 4)
+    let deadline = Date().addingTimeInterval(4)
+    while Date() < deadline {
+        if semaphore.wait(timeout: .now()) == .success {
+            break
+        }
+        RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+    }
 
-    let city = emptyToFallback(box.placemark?.locality, fallback: providerLocation.city)
-    let region = emptyToFallback(box.placemark?.administrativeArea, fallback: providerLocation.region)
-    let country = emptyToFallback(box.placemark?.country, fallback: providerLocation.country)
+    let city = emptyToFallback(cityFromPlacemark(box.placemark), fallback: providerLocation.city)
+    let region = emptyToFallback(regionFromPlacemark(box.placemark), fallback: providerLocation.region)
+    let country = emptyToFallback(countryFromPlacemark(box.placemark), fallback: providerLocation.country)
 
     return ProviderLocation(
         latitude: providerLocation.latitude,
@@ -588,6 +601,38 @@ private func emptyToFallback(_ value: String?, fallback: String) -> String {
         return fallback
     }
     return value
+}
+
+private func firstNonEmpty(_ values: [String?]) -> String {
+    for value in values {
+        if let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty {
+            return trimmed
+        }
+    }
+    return ""
+}
+
+private func cityFromPlacemark(_ placemark: CLPlacemark?) -> String {
+    firstNonEmpty([
+        placemark?.locality,
+        placemark?.subAdministrativeArea,
+        placemark?.subLocality,
+        placemark?.name,
+    ])
+}
+
+private func regionFromPlacemark(_ placemark: CLPlacemark?) -> String {
+    firstNonEmpty([
+        placemark?.administrativeArea,
+        placemark?.subAdministrativeArea,
+    ])
+}
+
+private func countryFromPlacemark(_ placemark: CLPlacemark?) -> String {
+    firstNonEmpty([
+        placemark?.country,
+        countryName(fromRegionCode: placemark?.isoCountryCode ?? ""),
+    ])
 }
 
 private func runCurl(url: String) -> Result<Data, CLIError> {

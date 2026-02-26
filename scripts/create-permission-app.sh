@@ -133,9 +133,9 @@ cat >"$APP_CONTENTS/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleVersion</key>
-  <string>0.1.1</string>
+  <string>0.1.2</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.1</string>
+  <string>0.1.2</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSLocationUsageDescription</key>
