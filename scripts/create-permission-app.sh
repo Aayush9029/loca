@@ -6,6 +6,8 @@ APP_NAME="Loca"
 BUNDLE_ID="art.aayush.loca"
 OUTPUT_DIR="$ROOT_DIR/dist"
 SIGN_IDENTITY="${LOCA_SIGN_IDENTITY:-}"
+USE_TIMESTAMP="${LOCA_SIGN_TIMESTAMP:-0}"
+RELEASE_SIGN="${LOCA_RELEASE_SIGN:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,12 +35,19 @@ if [[ ! -x "$BUILD_BIN" ]]; then
 fi
 
 if [[ -z "$SIGN_IDENTITY" ]]; then
-  SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+  if [[ "$RELEASE_SIGN" == "1" ]]; then
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+  else
+    SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ && $0 !~ /CSSMERR_TP_CERT_REVOKED/ {print $2; exit}')"
+    if [[ -z "$SIGN_IDENTITY" ]]; then
+      SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+    fi
+  fi
 fi
 
 if [[ -z "$SIGN_IDENTITY" ]]; then
-  echo "No Developer ID Application signing identity found."
-  echo "Set LOCA_SIGN_IDENTITY or install a Developer ID Application certificate."
+  echo "No suitable signing identity found."
+  echo "Set LOCA_SIGN_IDENTITY to a valid code signing identity."
   exit 1
 fi
 
@@ -80,9 +89,11 @@ cat >"$APP_CONTENTS/Info.plist" <<EOF
 EOF
 
 # Always sign with sandbox + location entitlement + hardened runtime.
-codesign --force --deep --timestamp --options runtime \
-  --entitlements "$ROOT_DIR/scripts/loca-sandbox.entitlements" \
-  -s "$SIGN_IDENTITY" \
-  "$APP_BUNDLE"
+SIGN_ARGS=(--force --deep --options runtime --entitlements "$ROOT_DIR/scripts/loca-sandbox.entitlements" -s "$SIGN_IDENTITY")
+if [[ "$USE_TIMESTAMP" == "1" ]]; then
+  SIGN_ARGS+=(--timestamp)
+fi
+
+codesign "${SIGN_ARGS[@]}" "$APP_BUNDLE"
 
 echo "$APP_BUNDLE"
