@@ -13,6 +13,7 @@ private enum Command {
 
 private struct Options {
     enum Output: String {
+        case interactive
         case text
         case json
     }
@@ -40,7 +41,7 @@ private struct Options {
         }
     }
 
-    var output: Output = .text
+    var output: Output = .interactive
     var timeout: TimeInterval = 20
     var accuracy: Accuracy = .hundredMeters
     var statusOnly = false
@@ -294,15 +295,10 @@ private func parseCommandLine() throws -> Command {
             return .version
         case "--status":
             options.statusOnly = true
+        case "--text":
+            options.output = .text
         case "-j", "--json":
             options.output = .json
-        case "-f", "--format":
-            index += 1
-            guard index < args.count else { throw CLIError.missingValue(arg) }
-            guard let output = Options.Output(rawValue: args[index]) else {
-                throw CLIError.invalidValue(flag: arg, value: args[index])
-            }
-            options.output = output
         case "-t", "--timeout":
             index += 1
             guard index < args.count else { throw CLIError.missingValue(arg) }
@@ -358,8 +354,8 @@ private func printHelp() {
           -h, --help              Show help
           -v, --version           Show version
           --status                Print location permission/service status only
+          --text                  Plain text output (no progress logs)
           -j, --json              Output JSON
-          -f, --format <fmt>      Output format: text|json (default: text)
           -t, --timeout <sec>     Timeout in seconds (default: 20)
           -a, --accuracy <value>  Accuracy: \(accuracyValues) (default: 100m)
         """
@@ -374,7 +370,7 @@ private func printStatus(output: Options.Output) {
     )
 
     switch output {
-    case .text:
+    case .interactive, .text:
         print("location_services_enabled: \(payload.locationServicesEnabled)")
         print("authorization_status: \(payload.authorizationStatus)")
     case .json:
@@ -382,8 +378,8 @@ private func printStatus(output: Options.Output) {
     }
 }
 
-private func fetchIPFallback() -> Result<LocationPayload, CLIError> {
-    printProgress("Falling back to IP geolocation providers...")
+private func fetchIPFallback(showProgress: Bool) -> Result<LocationPayload, CLIError> {
+    printProgress("Falling back to IP geolocation providers...", enabled: showProgress)
 
     let providers: [(String, String)] = [
         ("ipinfo", "https://ipinfo.io/json"),
@@ -398,7 +394,7 @@ private func fetchIPFallback() -> Result<LocationPayload, CLIError> {
     var errors: [String] = []
 
     for (providerName, url) in providers {
-        printProgress("Trying \(providerName)")
+        printProgress("Trying \(providerName)", enabled: showProgress)
         switch runCurl(url: url) {
         case .failure(let error):
             errors.append("\(providerName): \(error.localizedDescription)")
@@ -446,7 +442,7 @@ private func decodeProviderData(providerName: String, data: Data) -> Result<Prov
                     longitude: lon,
                     city: response.city ?? "",
                     region: response.region ?? "",
-                    country: response.country ?? ""
+                    country: countryName(fromRegionCode: response.country ?? "")
                 )
             )
 
@@ -629,7 +625,7 @@ private func runCurl(url: String) -> Result<Data, CLIError> {
 
 private func printLocation(_ payload: LocationPayload, output: Options.Output) {
     switch output {
-    case .text:
+    case .interactive, .text:
         print(String(format: "latitude: %.6f", payload.latitude))
         print(String(format: "longitude: %.6f", payload.longitude))
         print("city: \(payload.city)")
@@ -642,8 +638,8 @@ private func printLocation(_ payload: LocationPayload, output: Options.Output) {
     }
 }
 
-private func printProgress(_ message: String) {
-    guard stderrIsTTY else { return }
+private func printProgress(_ message: String, enabled: Bool) {
+    guard enabled, stderrIsTTY else { return }
     fputs("loca: \(message)\n", stderr)
 }
 
@@ -681,6 +677,13 @@ private func isoTimestamp(from date: Date) -> String {
     ISO8601DateFormatter().string(from: date)
 }
 
+private func countryName(fromRegionCode code: String) -> String {
+    let trimmed = code.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.count == 2 else { return trimmed }
+    let locale = Locale(identifier: "en_US_POSIX")
+    return locale.localizedString(forRegionCode: trimmed.uppercased()) ?? trimmed
+}
+
 @main
 private struct LocaCLI {
     static func main() {
@@ -696,20 +699,21 @@ private struct LocaCLI {
                     return
                 }
 
-                printProgress("Requesting CoreLocation location (timeout \(formatTimeout(options.timeout))s)...")
+                let showProgress = options.output == .interactive
+                printProgress("Requesting CoreLocation location (timeout \(formatTimeout(options.timeout))s)...", enabled: showProgress)
                 let fetcher = CoreLocationFetcher()
                 switch fetcher.fetch(timeout: options.timeout, accuracy: options.accuracy.coreLocationValue) {
                 case .success(let payload):
-                    printProgress("Using CoreLocation result.")
+                    printProgress("Using CoreLocation result.", enabled: showProgress)
                     printLocation(payload, output: options.output)
                 case .failure(let coreLocationError):
-                    printProgress("CoreLocation unavailable (\(coreLocationError.localizedDescription)).")
+                    printProgress("CoreLocation unavailable (\(coreLocationError.localizedDescription)).", enabled: showProgress)
                     if let hint = hostPermissionHint(for: coreLocationError) {
-                        printProgress(hint)
+                        printProgress(hint, enabled: showProgress)
                     }
-                    switch fetchIPFallback() {
+                    switch fetchIPFallback(showProgress: showProgress) {
                     case .success(let fallbackPayload):
-                        printProgress("Using IP fallback result.")
+                        printProgress("Using IP fallback result.", enabled: showProgress)
                         printLocation(fallbackPayload, output: options.output)
                     case .failure(let fallbackError):
                         fputs("loca: \(coreLocationError.localizedDescription)\n", stderr)

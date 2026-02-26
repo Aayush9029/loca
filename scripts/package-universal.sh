@@ -8,19 +8,26 @@ if [[ $# -ne 1 ]]; then
 fi
 
 VERSION="$1"
-NAME="loca"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUT_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/.build/release-artifacts"
+APP_NAME="Loca.app"
+NOTARY_PROFILE="${LOCA_NOTARY_PROFILE:-}"
+RELEASE_SIGN="${LOCA_RELEASE_SIGN:-1}"
+SIGN_TIMESTAMP="${LOCA_SIGN_TIMESTAMP:-1}"
+NOTARY_KEY_ID="${LOCA_NOTARY_KEY_ID:-}"
+NOTARY_ISSUER_ID="${LOCA_NOTARY_ISSUER_ID:-}"
+NOTARY_KEY_PATH="${LOCA_NOTARY_KEY_PATH:-}"
+NOTARY_KEY_BASE64_PATH="${LOCA_NOTARY_KEY_BASE64_PATH:-}"
 
 mkdir -p "$OUT_DIR" "$BUILD_DIR"
 
 swift build -c release --arch arm64 --arch x86_64
 
-ARM_BIN="$ROOT_DIR/.build/arm64-apple-macosx/release/$NAME"
-X86_BIN="$ROOT_DIR/.build/x86_64-apple-macosx/release/$NAME"
-APPLE_UNIVERSAL_BIN="$ROOT_DIR/.build/apple/Products/Release/$NAME"
-UNIVERSAL_BIN="$BUILD_DIR/$NAME"
+ARM_BIN="$ROOT_DIR/.build/arm64-apple-macosx/release/loca"
+X86_BIN="$ROOT_DIR/.build/x86_64-apple-macosx/release/loca"
+APPLE_UNIVERSAL_BIN="$ROOT_DIR/.build/apple/Products/Release/loca"
+UNIVERSAL_BIN="$BUILD_DIR/loca"
 
 if [[ -f "$APPLE_UNIVERSAL_BIN" ]]; then
   cp "$APPLE_UNIVERSAL_BIN" "$UNIVERSAL_BIN"
@@ -37,8 +44,21 @@ fi
 
 chmod +x "$UNIVERSAL_BIN"
 
-ARCHIVE="$OUT_DIR/$NAME-${VERSION#v}-universal-macos.tar.gz"
-tar -C "$BUILD_DIR" -czf "$ARCHIVE" "$NAME"
+# Build signed app bundle around the universal binary.
+LOCA_RELEASE_SIGN="$RELEASE_SIGN" \
+LOCA_SIGN_TIMESTAMP="$SIGN_TIMESTAMP" \
+  "$ROOT_DIR/scripts/create-permission-app.sh" --output "$BUILD_DIR" --binary "$UNIVERSAL_BIN" >/dev/null
+
+if [[ -n "$NOTARY_PROFILE" || ( -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" && ( -n "$NOTARY_KEY_PATH" || -n "$NOTARY_KEY_BASE64_PATH" ) ) ]]; then
+  if [[ -n "$NOTARY_PROFILE" ]]; then
+    "$ROOT_DIR/scripts/notarize-app.sh" "$BUILD_DIR/$APP_NAME" --profile "$NOTARY_PROFILE"
+  else
+    "$ROOT_DIR/scripts/notarize-app.sh" "$BUILD_DIR/$APP_NAME"
+  fi
+fi
+
+ARCHIVE="$OUT_DIR/loca-${VERSION#v}-universal-macos.tar.gz"
+tar -C "$BUILD_DIR" -czf "$ARCHIVE" "$APP_NAME"
 
 if command -v shasum >/dev/null 2>&1; then
   SHA256=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')

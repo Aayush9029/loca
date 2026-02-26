@@ -19,13 +19,14 @@ brew install loca
 ```bash
 loca
 loca --json
+loca --text
 loca --timeout 30
 loca --accuracy best
 loca --status
 ```
 
 `loca` uses CoreLocation first. If permission is unavailable or times out, it automatically falls back to IP-based city-level location.
-In interactive terminals, progress messages are shown on `stderr` while location is resolving.
+Progress logs are shown only in the default mode (no `--json`/`--text`).
 Output schema is consistent across both sources: `latitude`, `longitude`, `city`, `region`, `country`, `timestamp`, `source`.
 
 ## Options
@@ -35,8 +36,8 @@ Output schema is consistent across both sources: `latitude`, `longitude`, `city`
 | `-h, --help` | Show help |
 | `-v, --version` | Show version |
 | `--status` | Print service + permission status only |
+| `--text` | Plain text output (no progress logs) |
 | `-j, --json` | Output JSON |
-| `-f, --format <text\|json>` | Output format (default: `text`) |
 | `-t, --timeout <sec>` | Timeout in seconds (default: `20`) |
 | `-a, --accuracy <best\|10m\|100m\|1km\|3km>` | Requested location accuracy (default: `100m`) |
 
@@ -64,8 +65,23 @@ swift build -c release
 ./dist/Loca.app/Contents/MacOS/loca --json
 ```
 
-Release automation is in `.github/workflows/release.yml` and expects signing secrets:
-`MACOS_SIGNING_CERT_BASE64`, `MACOS_SIGNING_CERT_PASSWORD`, `LOCA_SIGN_IDENTITY`, `MACOS_KEYCHAIN_PASSWORD`.
+## Local Release (Sign + Notarize)
+
+Everything is local (no CI required):
+
+```bash
+# One-time: create notary profile in your keychain (dialog prompts supported)
+./scripts/setup-notary-profile.sh loca-notary
+
+# Build universal app, sign with Developer ID + hardened runtime + sandbox,
+# notarize, staple, and package release archive:
+LOCA_NOTARY_PROFILE=loca-notary ./scripts/package-universal.sh v0.1.0
+
+# Alternative: notarize with ASC API key env vars instead of keychain profile
+# LOCA_NOTARY_KEY_ID=... LOCA_NOTARY_ISSUER_ID=... LOCA_NOTARY_KEY_BASE64_PATH=... ./scripts/package-universal.sh v0.1.0
+```
+
+This produces `dist/loca-0.1.0-universal-macos.tar.gz` for GitHub Releases/Homebrew.
 
 ## License
 
