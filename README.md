@@ -75,13 +75,13 @@ Everything is local (no CI required):
 
 # Build universal app, sign with Developer ID + hardened runtime + sandbox,
 # notarize, staple, and package release archive:
-LOCA_NOTARY_PROFILE=loca-notary ./scripts/package-universal.sh v0.1.0
+LOCA_NOTARY_PROFILE=loca-notary ./scripts/package-universal.sh v0.1.1
 
 # Alternative: notarize with ASC API key env vars instead of keychain profile
-# LOCA_NOTARY_KEY_ID=... LOCA_NOTARY_ISSUER_ID=... LOCA_NOTARY_KEY_BASE64_PATH=... ./scripts/package-universal.sh v0.1.0
+# LOCA_NOTARY_KEY_ID=... LOCA_NOTARY_ISSUER_ID=... LOCA_NOTARY_KEY_BASE64_PATH=... ./scripts/package-universal.sh v0.1.1
 ```
 
-This produces `dist/loca-0.1.0-universal-macos.tar.gz` for GitHub Releases/Homebrew.
+This produces `dist/loca-0.1.1-universal-macos.tar.gz` for GitHub Releases/Homebrew.
 
 ## License
 

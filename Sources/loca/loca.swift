@@ -2,7 +2,7 @@ import CoreLocation
 import Darwin
 import Foundation
 
-private let version = "0.1.0"
+private let version = "0.1.1"
 private let stderrIsTTY = isatty(fileno(stderr)) == 1
 
 private enum Command {
