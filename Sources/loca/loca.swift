@@ -647,6 +647,23 @@ private func printProgress(_ message: String) {
     fputs("loca: \(message)\n", stderr)
 }
 
+private func hostPermissionHint(for error: CLIError) -> String? {
+    let termProgram = ProcessInfo.processInfo.environment["TERM_PROGRAM"]?.lowercased() ?? ""
+    let isGhostty = termProgram.contains("ghostty")
+
+    if isGhostty {
+        switch error {
+        case .authorizationDenied, .authorizationNotDetermined:
+            return "Ghostty may not present a Location prompt for child CLIs. Run once in Terminal.app or use a bundled helper app identity."
+        case .locationFailure(let message) where message.contains("kCLErrorDomain error 1"):
+            return "Ghostty returned location denied immediately. Run once in Terminal.app or use a bundled helper app identity."
+        default:
+            return nil
+        }
+    }
+    return nil
+}
+
 private func printJSON<T: Encodable>(_ payload: T) {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -687,6 +704,9 @@ private struct LocaCLI {
                     printLocation(payload, output: options.output)
                 case .failure(let coreLocationError):
                     printProgress("CoreLocation unavailable (\(coreLocationError.localizedDescription)).")
+                    if let hint = hostPermissionHint(for: coreLocationError) {
+                        printProgress(hint)
+                    }
                     switch fetchIPFallback() {
                     case .success(let fallbackPayload):
                         printProgress("Using IP fallback result.")

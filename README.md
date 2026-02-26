@@ -54,6 +54,19 @@ Output schema is consistent across both sources: `latitude`, `longitude`, `city`
 - Location Services enabled
 - Terminal app (or your shell app) allowed in macOS Location Services
 
+## Signed App Flow
+
+For reliable macOS permission behavior in restrictive terminal hosts, create a signed hardened app wrapper:
+
+```bash
+swift build -c release
+./scripts/create-permission-app.sh
+./dist/Loca.app/Contents/MacOS/loca --json
+```
+
+Release automation is in `.github/workflows/release.yml` and expects signing secrets:
+`MACOS_SIGNING_CERT_BASE64`, `MACOS_SIGNING_CERT_PASSWORD`, `LOCA_SIGN_IDENTITY`, `MACOS_KEYCHAIN_PASSWORD`.
+
 ## License
 
 MIT

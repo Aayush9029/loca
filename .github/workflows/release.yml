@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example: 0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-sign-release:
+    runs-on: macos-14
+    env:
+      VERSION: ${{ inputs.version }}
+      LOCA_SIGN_IDENTITY: ${{ secrets.LOCA_SIGN_IDENTITY }}
+      KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          [[ -n "${{ secrets.MACOS_SIGNING_CERT_BASE64 }}" ]] || { echo "Missing MACOS_SIGNING_CERT_BASE64"; exit 1; }
+          [[ -n "${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}" ]] || { echo "Missing MACOS_SIGNING_CERT_PASSWORD"; exit 1; }
+          [[ -n "${{ secrets.LOCA_SIGN_IDENTITY }}" ]] || { echo "Missing LOCA_SIGN_IDENTITY"; exit 1; }
+          [[ -n "${{ secrets.MACOS_KEYCHAIN_PASSWORD }}" ]] || { echo "Missing MACOS_KEYCHAIN_PASSWORD"; exit 1; }
+
+      - name: Setup signing keychain
+        run: |
+          CERT_PATH="$RUNNER_TEMP/signing-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/loca-signing.keychain-db"
+
+          echo "${{ secrets.MACOS_SIGNING_CERT_BASE64 }}" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Build universal CLI archive
+        run: ./scripts/package-universal.sh "v${VERSION}"
+
+      - name: Build signed hardened app
+        run: |
+          swift build -c release
+          ./scripts/create-permission-app.sh
+
+      - name: Create app zip
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/Loca.app "dist/Loca-${VERSION}.app.zip"
+
+      - name: Notarize app (optional)
+        if: ${{ secrets.NOTARY_APPLE_ID != '' && secrets.NOTARY_TEAM_ID != '' && secrets.NOTARY_APP_PASSWORD != '' }}
+        run: |
+          xcrun notarytool submit "dist/Loca-${VERSION}.app.zip" \
+            --apple-id "${{ secrets.NOTARY_APPLE_ID }}" \
+            --team-id "${{ secrets.NOTARY_TEAM_ID }}" \
+            --password "${{ secrets.NOTARY_APP_PASSWORD }}" \
+            --wait
+          xcrun stapler staple dist/Loca.app
+          ditto -c -k --sequesterRsrc --keepParent dist/Loca.app "dist/Loca-${VERSION}.app.zip"
+
+      - name: Create checksums
+        run: |
+          shasum -a 256 "dist/loca-${VERSION}-universal-macos.tar.gz" > dist/checksums.txt
+          shasum -a 256 "dist/Loca-${VERSION}.app.zip" >> dist/checksums.txt
+          cat dist/checksums.txt
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          generate_release_notes: true
+          files: |
+            dist/loca-${{ env.VERSION }}-universal-macos.tar.gz
+            dist/Loca-${{ env.VERSION }}.app.zip
+            dist/checksums.txt
