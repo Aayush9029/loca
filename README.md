@@ -86,3 +86,7 @@ This produces `dist/loca-0.1.2-universal-macos.tar.gz` for GitHub Releases/Homeb
 ## License
 
 MIT
+
+---
+
+*More CLI tools: [`brew tap aayush9029/tap`](https://github.com/Aayush9029/homebrew-tap)*
