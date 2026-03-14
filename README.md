@@ -1,3 +1,5 @@
+<img src="assets/icon.png" width="128" alt="loca">
+
 # loca
 
 Get your Mac's current location from the terminal.
