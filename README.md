@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="loca demo" width="800">
+  <img src="assets/demo.gif" alt="loca demo">
 </p>
 
 ## Install
