@@ -4,6 +4,8 @@
 
 Get your Mac's current location from the terminal.
 
+<p align="center"><img src="assets/demo.gif" alt="loca demo" width="800"></p>
+
 ## Install
 
 ```bash
